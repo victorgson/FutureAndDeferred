@@ -12,6 +12,8 @@ func fetchName (comletionHandler: (Result<String, Error>) -> Void )  {
 }
 
 func name() -> AnyPublisher<String, Error> {
+    
+    // If we don't add Deferred here, the Future will still run even though we don't attach a sink. Adding Deferred stops it from running until it's subscribed to.
     return Deferred {
         Future<String, Error> { promise in
             fetchName { result in
