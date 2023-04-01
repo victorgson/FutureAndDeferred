@@ -1,33 +1,52 @@
 
 import Combine
-
+import Foundation
+import UIKit
 
 private var cancellables = Set<AnyCancellable>()
 
-func fetchName (comletionHandler: (Result<String, Error>) -> Void )  {
-   
-   // Fancy API code
-    let name = "Insert name here"
-    comletionHandler(.success(name))
+struct User: Codable {
+    let name: String
+}
+
+func fetchName() -> AnyPublisher<[User], Error>  {
+    let url = URL(string: "https://jsonplaceholder.typicode.com/users")!
+
+    return Deferred {
+        URLSession.shared.dataTaskPublisher(for: url)
+            .tryMap() { element -> Data in
+                guard let httpResponse = element.response as? HTTPURLResponse,
+                      httpResponse.statusCode == 200 else {
+                    throw URLError(.badServerResponse)
+                }
+                return element.data
+            }
+            .decode(type: [User].self, decoder: JSONDecoder())
+            .eraseToAnyPublisher()
+    }
+    .eraseToAnyPublisher()
 }
 
 func name() -> AnyPublisher<String, Error> {
-    
-    // If we don't add Deferred here, the Future will still run even though we don't attach a sink. Adding Deferred stops it from running until it's subscribed to.
     return Deferred {
         Future<String, Error> { promise in
-            fetchName { result in
-                switch result {
-                case .success(let name):
-                    promise(.success(name))
-                case .failure(let err):
-                    promise(.failure(err))
+            fetchName().sink(receiveCompletion: { completion in
+                switch completion {
+                case .finished:
+                    break
+                case .failure(let error):
+                    promise(.failure(error))
                 }
-            }
+            }, receiveValue: { users in
+                if let firstUser = users.first {
+                    promise(.success(firstUser.name))
+                } else {
+                    promise(.failure(NSError(domain: "No user found", code: 0, userInfo: nil)))
+                }
+            }).store(in: &cancellables)
         }
     }.eraseToAnyPublisher()
 }
-
 name().sink { completion in
     switch completion {
     case .finished:
